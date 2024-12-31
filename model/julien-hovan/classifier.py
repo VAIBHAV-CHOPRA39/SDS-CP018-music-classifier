@@ -106,7 +106,7 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments):
     processed_segments = tf.keras.layers.TimeDistributed(segment_model)(main_input)
     
     # Add attention mechanism using MultiHeadSelfAttention from attention.py
-    attention_layer = MultiHeadSelfAttention(embed_dim=128, num_heads=4)
+    attention_layer = MultiHeadSelfAttention(embed_dim=256, num_heads=8)
     attention_output = attention_layer(processed_segments)
     
     # Global temporal pooling

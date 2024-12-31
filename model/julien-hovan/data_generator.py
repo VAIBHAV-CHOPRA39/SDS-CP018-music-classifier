@@ -3,7 +3,8 @@ import tensorflow as tf
 
 class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
     def __init__(self, paths, labels, batch_size=32, dim=(128, 128), 
-                 n_channels=1, n_classes=10, shuffle=True, augment=False):
+                 n_channels=1, n_classes=10, shuffle=True, augment=False,
+                 normalization_stats=None):
         super().__init__()
         self.paths = paths
         self.labels = labels
@@ -16,6 +17,7 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
         self.indexes = np.arange(len(self.paths))
         if self.shuffle:
             np.random.shuffle(self.indexes)
+        self.normalization_stats = normalization_stats
     
     def __len__(self):
         return int(np.floor(len(self.paths) / self.batch_size))
@@ -163,3 +165,23 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
             pitch_shifted_segments.append(pitch_shifted_segment)
         
         return tf.stack(pitch_shifted_segments) 
+    
+    def _normalize(self, segments):
+        if self.normalization_stats is not None:
+            if "mean" in self.normalization_stats:
+                # Z-score normalization
+                mean_val = self.normalization_stats["mean"]
+                std_val = self.normalization_stats["std"]
+                if std_val != 0:
+                    segments = (segments - mean_val) / std_val
+                else:
+                    segments = np.zeros_like(segments)
+            elif "min" in self.normalization_stats:
+                # Min-max normalization
+                min_val = self.normalization_stats["min"]
+                max_val = self.normalization_stats["max"]
+                if max_val - min_val != 0:
+                    segments = (segments - min_val) / (max_val - min_val)
+                else:
+                    segments = np.zeros_like(segments)
+        return segments 
