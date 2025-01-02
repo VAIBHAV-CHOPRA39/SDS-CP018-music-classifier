@@ -122,7 +122,7 @@ def main():
     BATCH_SIZE = 16  # Might need to reduce batch size due to larger data
     EPOCHS = 100
     IMG_HEIGHT = 128
-    IMG_WIDTH = 128
+    IMG_WIDTH = 172
     CHANNELS = 1
     NUM_SEGMENTS = 7 # For 30-second audio split into 4-second segments
     
