@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from augment import spec_augment
 from config import ModelConfig
 
 class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
@@ -105,8 +106,7 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
         return X, tf.keras.utils.to_categorical(y, num_classes=self.n_classes)
     
     def _augment_segments(self, segments):
-        # Add time-sequence aware augmentations here
-        # For example, small frequency shifts that are consistent across segments
+        
         if self.augment:
             if np.random.random() < 0.5:
                 segments = self._random_frequency_shift(segments)
@@ -116,7 +116,19 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
                 segments = self._time_stretch(segments)
             if np.random.random() < 0.5:
                 segments = self._pitch_shift(segments)
+            
+            # SpecAugment
+            if np.random.random() < 0.5:
+                segments = spec_augment(
+                    segments,
+                    num_time_masks=2,
+                    time_mask_size=20,
+                    num_freq_masks=2,
+                    freq_mask_size=10
+                )
+        
         return segments
+
     
     def _random_frequency_shift(self, segments):
         # Shift the frequency of the segments by a random amount
