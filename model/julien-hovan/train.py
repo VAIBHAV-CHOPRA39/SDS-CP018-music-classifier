@@ -9,6 +9,7 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
 from collections import Counter
 import logging
+from config import ModelConfig
 
 def prepare_data(spectrograms_dir):
     """
@@ -117,14 +118,13 @@ def main():
     tf.random.set_seed(42)
     np.random.seed(42)
     
-    # Parameters
+    # Parameters from config
     SPECTROGRAMS_DIR = '/Users/julienh/Desktop/SDS/SDS-CP018-music-classifier/Data/mel_spectrograms_images'
-    BATCH_SIZE = 16  # Might need to reduce batch size due to larger data
-    EPOCHS = 100
-    IMG_HEIGHT = 128
-    IMG_WIDTH = 172
-    CHANNELS = 1
-    NUM_SEGMENTS = 7 # For 30-second audio split into 4-second segments
+    BATCH_SIZE = ModelConfig.BATCH_SIZE
+    EPOCHS = ModelConfig.EPOCHS
+    IMG_HEIGHT, IMG_WIDTH = ModelConfig.SPECTROGRAM_DIM
+    CHANNELS = ModelConfig.N_CHANNELS
+    NUM_SEGMENTS = ModelConfig.NUM_SEGMENTS
     
     # Prepare data
     print("Preparing data...")
@@ -231,8 +231,9 @@ def main():
         num_segments=NUM_SEGMENTS
     )
     
+    # Let's also move these training parameters to config
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),  # Slightly lower learning rate
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
@@ -241,17 +242,17 @@ def main():
     callbacks = [
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
-            factor=0.5,
-            patience=5,
-            min_lr=0.00001
+            factor=ModelConfig.REDUCE_LR_FACTOR,
+            patience=ModelConfig.REDUCE_LR_PATIENCE,
+            min_lr=ModelConfig.MIN_LR
         ),
         tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=15,
+            patience=ModelConfig.EARLY_STOPPING_PATIENCE,
             restore_best_weights=True
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            'saved_models/best_cnn_model.keras',
+            ModelConfig.MODEL_CHECKPOINT_PATH,
             monitor='val_accuracy',
             save_best_only=True,
             mode='max'
@@ -267,8 +268,8 @@ def main():
         callbacks=callbacks
     )
     
-    # Plot training history
-    plot_training_history(history)
+    # Update visualization paths
+    plt.savefig(f'{ModelConfig.VISUALIZATION_DIR}/training_history.png')
     
     # Evaluate on test set
     print("\nEvaluating model on test set...")
@@ -292,9 +293,9 @@ def main():
     print("\nClassification Report:")
     print(classification_report(y_true, y_pred, target_names=genres))
     
-    # Save model
-    model.save('saved_models/final_model.keras')
-    print("\nModel saved as 'final_model.keras'")
+    # Save final model
+    model.save(ModelConfig.FINAL_MODEL_PATH)
+    print(f"\nModel saved as '{ModelConfig.FINAL_MODEL_PATH}'")
 
 if __name__ == "__main__":
     main() 

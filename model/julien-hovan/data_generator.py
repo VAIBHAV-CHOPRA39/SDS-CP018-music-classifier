@@ -1,9 +1,13 @@
 import numpy as np
 import tensorflow as tf
+from config import ModelConfig
 
 class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
-    def __init__(self, paths, labels, batch_size=32, dim=(128, 128), 
-                 n_channels=1, n_classes=10, shuffle=True, augment=False,
+    def __init__(self, paths, labels, 
+                 batch_size=ModelConfig.BATCH_SIZE,
+                 dim=ModelConfig.SPECTROGRAM_DIM,
+                 n_channels=ModelConfig.N_CHANNELS,
+                 n_classes=10, shuffle=True, augment=False,
                  normalization_stats=None):
         super().__init__()
         self.paths = paths
@@ -45,6 +49,15 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
                 # Load saved numpy array (contains multiple time segments)
                 segments = np.load(self.paths[idx])
                 
+                # Apply normalization before augmentation
+                if self.normalization_stats is not None:
+                    if "mean" in self.normalization_stats:  # Z-score normalization
+                        segments = (segments - self.normalization_stats["mean"]) / self.normalization_stats["std"]
+                    elif "min" in self.normalization_stats:  # Min-max normalization
+                        segments = (segments - self.normalization_stats["min"]) / (
+                            self.normalization_stats["max"] - self.normalization_stats["min"]
+                        )
+                
                 # Debug print
                 #print(f"Original segments shape: {segments.shape}")
                 
@@ -67,6 +80,7 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
                 # Debug print
                 #print(f"Final segments shape: {segments.shape}")
                 
+                # Apply augmentations after normalization
                 if self.augment:
                     segments = self._augment_segments(segments)
                 
@@ -106,7 +120,7 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
     
     def _random_frequency_shift(self, segments):
         # Shift the frequency of the segments by a random amount
-        max_shift = segments.shape[1] // 20  # Shift up to 5% of the frequency range
+        max_shift = int(segments.shape[1] * ModelConfig.AUGMENTATION_PARAMS['freq_shift_range'])
         shift = np.random.randint(-max_shift, max_shift)
         
         # Create a copy to avoid modifying the original array
@@ -121,16 +135,17 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
         
         return shifted_segments
     
-    def _add_noise(self, segments, noise_factor=0.02):
+    def _add_noise(self, segments):
         # Add random noise to the segments
-        noise = np.random.normal(0, noise_factor, segments.shape)
+        noise = np.random.normal(0, ModelConfig.AUGMENTATION_PARAMS['noise_factor'], segments.shape)
         noisy_segments = segments + noise
         return noisy_segments
     
     def _time_stretch(self, segments, rate=None):
         # Time stretch the segments by a small random amount
         if rate is None:
-            rate = np.random.uniform(0.8, 1.2)  # Stretch between 80% and 120%
+            min_rate, max_rate = ModelConfig.AUGMENTATION_PARAMS['time_stretch_range']
+            rate = np.random.uniform(min_rate, max_rate)
         
         stretched_segments = []
         for segment in segments:
@@ -148,7 +163,8 @@ class TimeSegmentedSpectrogramGenerator(tf.keras.utils.Sequence):
     def _pitch_shift(self, segments, semitones=None):
         # Pitch shift the segments by a small random amount
         if semitones is None:
-            semitones = np.random.uniform(-2, 2)  # Shift up to 2 semitones
+            min_shift, max_shift = ModelConfig.AUGMENTATION_PARAMS['pitch_shift_range']
+            semitones = np.random.uniform(min_shift, max_shift)
         
         # Convert semitones to a frequency ratio
         ratio = 2 ** (semitones / 12.0)
