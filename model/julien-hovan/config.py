@@ -22,7 +22,9 @@ class ModelConfig:
         'freq_shift_range': 0.05,  # 5% of frequency range
         'noise_factor': 0.02,
         'time_stretch_range': (0.8, 1.2),
-        'pitch_shift_range': (-2, 2)  # semitones
+        'pitch_shift_range': (-2, 2),  # semitones
+        'freq_mask_width': 0.1,  # 10% of frequency bins
+        'time_mask_width': 0.1,  # 10% of time steps
     }
     
     # Training Configuration
