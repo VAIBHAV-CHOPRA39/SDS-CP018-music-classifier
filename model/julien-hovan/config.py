@@ -10,7 +10,7 @@ class ModelConfig:
     NUM_TRANSFORMER_BLOCKS = 2
     DENSE_UNITS = [512, 256]  # Units in dense layers
     DROPOUT_RATE = 0.5
-    
+    ATTENTION_DROPOUT_RATE = 0.1
     # Time-aware Classifier Configuration
     NUM_SEGMENTS = 7  # Default number of time segments
     

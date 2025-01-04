@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-from cnn import create_cnn_model
+from cnn import create_cnn_model, create_resnet_model
 from attention import MultiHeadSelfAttention
 from config import ModelConfig
 
@@ -92,7 +92,7 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments=ModelCon
     segment_input = tf.keras.layers.Input(shape=input_shape)
     
     # Use the CNN model from cnn.py
-    cnn = create_cnn_model(input_shape)
+    cnn = create_resnet_model(input_shape)
     
     x = cnn(segment_input)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
@@ -109,7 +109,8 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments=ModelCon
     # Add attention mechanism using MultiHeadSelfAttention from attention.py
     attention_layer = MultiHeadSelfAttention(
         embed_dim=ModelConfig.EMBED_DIM, 
-        num_heads=ModelConfig.NUM_HEADS
+        num_heads=ModelConfig.NUM_HEADS,
+        dropout_rate=ModelConfig.ATTENTION_DROPOUT_RATE
     )
     attention_output = attention_layer(processed_segments)
     
@@ -122,4 +123,4 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments=ModelCon
     outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     
     model = tf.keras.Model(inputs=main_input, outputs=outputs)
-    return model 
+    return model
