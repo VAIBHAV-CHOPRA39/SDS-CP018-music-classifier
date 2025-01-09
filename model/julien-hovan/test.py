@@ -12,7 +12,7 @@ BATCH_SIZE = 32
 DATA_DIR = "Data/mel_spectrograms_images"  # Updated data directory
 NUM_SEGMENTS = 7  # Number of segments expected by the model
 IMG_HEIGHT = 128
-IMG_WIDTH = 172
+IMG_WIDTH = 128
 
 def load_data_from_npy(data_dir, img_size, num_segments):
     """
@@ -98,32 +98,61 @@ def load_and_evaluate_model(model_path, data_dir, img_height, img_width, batch_s
         augment=False  # Typically, no augmentation during evaluation
     )
 
-    # Evaluate the model using the generator
-    test_loss, test_accuracy = model.evaluate(test_generator)
-    print(f"Test accuracy: {test_accuracy:.4f}")
+    # Add debugging information for data loading
+    print(f"Found {len(test_paths)} test files")
+    print(f"Class distribution:", {name: sum(1 for path, label in test_labels.items() if label == i) 
+                                 for i, name in enumerate(class_names)})
 
-    # Generate predictions using the generator
-    y_pred = []
-    y_true = []
-    for x, y in test_generator:
-        pred = model.predict(x)
-        y_pred.extend(np.argmax(pred, axis=1))
-        y_true.extend(np.argmax(y, axis=1))  # Decode one-hot encoded labels
+    # Modify the evaluation and prediction logic
+    try:
+        # Evaluate the model
+        test_loss, test_accuracy = model.evaluate(test_generator)
+        print(f"Test accuracy: {test_accuracy:.4f}")
 
-    # Create confusion matrix
-    cm = confusion_matrix(y_true, y_pred)
-    class_names = sorted(os.listdir(data_dir))  # Get class names for labels
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=class_names,
-                yticklabels=class_names)
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.title('Confusion Matrix')
-    plt.show()
+        # Generate predictions
+        y_pred = []
+        y_true = []
+        
+        # Get the total number of batches
+        num_batches = len(test_generator)
+        print(f"Total number of batches: {num_batches}")
+        
+        for i, (x, y) in enumerate(test_generator):
+            if x.size == 0:
+                print(f"Warning: Empty batch encountered at index {i}")
+                continue
+                
+            pred = model.predict(x, verbose=0)  # Reduced verbosity
+            y_pred.extend(np.argmax(pred, axis=1))
+            y_true.extend(np.argmax(y, axis=1))
+            
+            if i >= num_batches - 1:  # Stop after processing all batches
+                break
 
-    # Generate classification report
-    print(classification_report(y_true, y_pred, target_names=class_names))
+        if not y_pred or not y_true:
+            raise ValueError("No predictions were generated. Check if the test data is being loaded correctly.")
+
+        # Create confusion matrix
+        cm = confusion_matrix(y_true, y_pred)
+        class_names = sorted(os.listdir(data_dir))  # Get class names for labels
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                    xticklabels=class_names,
+                    yticklabels=class_names)
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix')
+        plt.show()
+
+        # Generate classification report
+        print(classification_report(y_true, y_pred, target_names=class_names))
+
+    except Exception as e:
+        print(f"Error during evaluation: {str(e)}")
+        print("Debug information:")
+        print(f"Number of test paths: {len(test_paths)}")
+        print(f"Number of test labels: {len(test_labels)}")
+        raise  # Re-raise the exception for full traceback
 
 if __name__ == "__main__":
     MODEL_PATH = 'model/julien-hovan/saved_models/final_model.keras'

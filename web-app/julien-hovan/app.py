@@ -1,6 +1,13 @@
 import streamlit as st
-import numpy as np
-from PIL import Image
+from model_handler import MusicGenrePredictor
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use('Agg')  # Required for streamlit
+
+# Initialize the predictor (wrapped in cache_resource to prevent reloading)
+@st.cache_resource
+def get_predictor():
+    return MusicGenrePredictor()
 
 # Page configuration
 st.set_page_config(
@@ -16,6 +23,14 @@ st.markdown("""
     Upload an audio file and let AI analyze its musical characteristics.
 """)
 
+# Initialize predictor
+try:
+    predictor = get_predictor()
+    st.session_state['model_loaded'] = True
+except Exception as e:
+    st.error(f"Error loading model: {str(e)}")
+    st.session_state['model_loaded'] = False
+
 # Create two columns for layout
 col1, col2 = st.columns([3, 2])
 
@@ -28,40 +43,52 @@ with col1:
         help="Maximum file size: 200MB"
     )
     
-    # Example audio section
-    with st.expander("Or try an example"):
-        if st.button("Use Example Audio"):
-            st.info("Loading example audio file...")
-            # Placeholder for example functionality
-    
-    # Display upload status and spectrogram
     if uploaded_file is not None:
         st.success("File successfully uploaded!")
         
-        with st.spinner("Generating spectrogram..."):
-            # Placeholder for spectrogram display
-            st.image(
-                "https://via.placeholder.com/600x300?text=Spectrogram+Visualization",
-                caption="Audio Spectrogram"
-            )
+        # Initialize session state for processed audio
+        if 'processed_audio' not in st.session_state:
+            st.session_state['processed_audio'] = None
+        
+        with st.spinner("Processing audio..."):
+            try:
+                # Process the audio file
+                audio_segments, mel_spect = predictor.process_audio_file(uploaded_file)
+                
+                # Display spectrogram
+                fig = predictor.generate_spectrogram_plot(mel_spect)
+                plt.close(fig)  # Close the figure after creating it
+                st.pyplot(fig)
+                
+                # Store processed audio in session state
+                st.session_state['processed_audio'] = audio_segments
+                
+            except Exception as e:
+                st.error(f"Error processing audio: {str(e)}")
 
 with col2:
     # Results section
     st.subheader("Analysis Results")
     
-    if uploaded_file is not None:
+    # Check if we have processed audio before attempting prediction
+    if (uploaded_file is not None and 
+        st.session_state.get('model_loaded', False) and 
+        st.session_state.get('processed_audio') is not None):
         with st.spinner("Analyzing audio..."):
-            # Placeholder for genre prediction
-            st.markdown("### Predicted Genre")
-            st.info("Rock", icon="🎸")
-            
-            # Confidence scores
-            st.markdown("### Confidence Scores")
-            genres = ["Rock", "Jazz", "Classical", "Hip Hop", "Electronic"]
-            scores = np.random.uniform(0, 1, len(genres))
-            
-            for genre, score in zip(genres, scores):
-                st.progress(score, text=f"{genre}: {score:.1%}")
+            try:
+                # Get prediction
+                results = predictor.predict_genre(st.session_state['processed_audio'])
+                
+                # Display results
+                st.markdown("### Predicted Genre")
+                st.info(f"{results['predicted_genre'].title()}", icon="🎵")
+                
+                st.markdown("### Confidence Scores")
+                for genre, score in results['confidence_scores'].items():
+                    st.progress(score, text=f"{genre.title()}: {score:.1%}")
+                    
+            except Exception as e:
+                st.error(f"Error during prediction: {str(e)}")
 
 # Additional information
 with st.expander("About The Music Translator"):
