@@ -2,6 +2,9 @@ import streamlit as st
 from model_handler import MusicGenrePredictor
 import matplotlib
 import matplotlib.pyplot as plt
+import librosa
+import io
+import soundfile as sf  # Add this import for audio writing
 matplotlib.use('Agg')  # Required for streamlit
 
 # Initialize the predictor (wrapped in cache_resource to prevent reloading)
@@ -40,7 +43,7 @@ with col1:
     uploaded_file = st.file_uploader(
         "Choose an MP3 or WAV file",
         type=["mp3", "wav"],
-        help="Maximum file size: 200MB"
+        help="Maximum file size: 200MB. Files longer than 30 seconds will be trimmed."
     )
     
     if uploaded_file is not None:
@@ -52,12 +55,32 @@ with col1:
         
         with st.spinner("Processing audio..."):
             try:
+                # Load and check audio duration
+                audio_bytes = uploaded_file.read()
+                uploaded_file.seek(0)  # Reset file pointer
+                
+                # Load audio with librosa
+                audio, sr = librosa.load(io.BytesIO(audio_bytes), sr=None)
+                duration = librosa.get_duration(y=audio, sr=sr)
+                
+                # Only show warning and trim if duration is significantly over 30 seconds
+                if duration > 30.5:  # Adding small buffer for rounding
+                    st.warning(f"Audio duration ({duration:.1f}s) exceeds 30 seconds. Only the first 30 seconds will be analyzed.")
+                    # Trim audio to 30 seconds
+                    samples_to_keep = int(30 * sr)
+                    audio = audio[:samples_to_keep]
+                    # Convert back to bytes
+                    trimmed_file = io.BytesIO()
+                    sf.write(trimmed_file, audio, sr, format='wav')
+                    trimmed_file.seek(0)
+                    uploaded_file = trimmed_file
+                
                 # Process the audio file
                 audio_segments, mel_spect = predictor.process_audio_file(uploaded_file)
                 
                 # Display spectrogram
                 fig = predictor.generate_spectrogram_plot(mel_spect)
-                plt.close(fig)  # Close the figure after creating it
+                plt.close(fig)
                 st.pyplot(fig)
                 
                 # Store processed audio in session state
