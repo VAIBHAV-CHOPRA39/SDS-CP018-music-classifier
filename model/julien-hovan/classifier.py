@@ -1,14 +1,15 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-from cnn import create_cnn_model
+from cnn import create_cnn_model, create_resnet_model
 from attention import MultiHeadSelfAttention
+from config import ModelConfig
 
 def create_music_genre_classifier(
     input_shape,
     num_classes,
-    embed_dim,
-    num_heads,
-    num_transformer_blocks
+    embed_dim=ModelConfig.EMBED_DIM,
+    num_heads=ModelConfig.NUM_HEADS,
+    num_transformer_blocks=ModelConfig.NUM_TRANSFORMER_BLOCKS
 ):
     """
     Create a music genre classifier with CNN, Multi-head Attention, and Classification layers
@@ -37,8 +38,8 @@ def create_music_genre_classifier(
     x = layers.GlobalAveragePooling1D()(x)
     
     # Classification Head
-    x = layers.Dense(512, activation='relu')(x)
-    x = layers.Dropout(0.5)(x)
+    x = layers.Dense(ModelConfig.DENSE_UNITS[0], activation='relu')(x)
+    x = layers.Dropout(ModelConfig.DROPOUT_RATE)(x)
     outputs = layers.Dense(num_classes, activation='softmax')(x)
     
     # Create model
@@ -81,7 +82,7 @@ def create_minimal_cnn_classifier(input_shape, num_classes):
     
     return model 
 
-def create_time_aware_classifier(input_shape, num_classes, num_segments):
+def create_time_aware_classifier(input_shape, num_classes, num_segments=ModelConfig.NUM_SEGMENTS):
     """
     Creates a time-aware classifier that processes multiple segments of a spectrogram
     input_shape: (height, width, channels) for each segment
@@ -91,7 +92,7 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments):
     segment_input = tf.keras.layers.Input(shape=input_shape)
     
     # Use the CNN model from cnn.py
-    cnn = create_cnn_model(input_shape)
+    cnn = create_resnet_model(input_shape)
     
     x = cnn(segment_input)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
@@ -106,16 +107,20 @@ def create_time_aware_classifier(input_shape, num_classes, num_segments):
     processed_segments = tf.keras.layers.TimeDistributed(segment_model)(main_input)
     
     # Add attention mechanism using MultiHeadSelfAttention from attention.py
-    attention_layer = MultiHeadSelfAttention(embed_dim=128, num_heads=4)
+    attention_layer = MultiHeadSelfAttention(
+        embed_dim=ModelConfig.EMBED_DIM, 
+        num_heads=ModelConfig.NUM_HEADS,
+        dropout_rate=ModelConfig.ATTENTION_DROPOUT_RATE
+    )
     attention_output = attention_layer(processed_segments)
     
     # Global temporal pooling
     x = tf.keras.layers.GlobalAveragePooling1D()(attention_output)
     
     # Final classification
-    x = tf.keras.layers.Dense(256, activation='relu')(x)
-    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dense(ModelConfig.DENSE_UNITS[1], activation='relu')(x)
+    x = tf.keras.layers.Dropout(ModelConfig.DROPOUT_RATE)(x)
     outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     
     model = tf.keras.Model(inputs=main_input, outputs=outputs)
-    return model 
+    return model
