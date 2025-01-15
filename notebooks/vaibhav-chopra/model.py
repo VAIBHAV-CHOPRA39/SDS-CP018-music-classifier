@@ -1,11 +1,11 @@
 import os
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
-from tensorflow.keras.applications import MobileNetV2
 
 def load_dataset(dataset_dir="kaggle_dataset/genres_original", target_size=(128, 128), batch_size=32):
     """
@@ -17,7 +17,7 @@ def load_dataset(dataset_dir="kaggle_dataset/genres_original", target_size=(128,
     batch_size (int): Batch size for training (default: 32).
 
     Returns:
-    tuple: Training and validation data generators.
+    tuple: Training and validation data.
     """
     datagen = ImageDataGenerator(rescale=1.0 / 255, validation_split=0.2)
 
@@ -40,108 +40,111 @@ def load_dataset(dataset_dir="kaggle_dataset/genres_original", target_size=(128,
     return train_data, val_data
 
 
-def create_model(input_shape=(128, 128, 3), num_classes=10):
+def prepare_data(train_data, val_data):
     """
-    Create and compile the CNN model.
+    Prepare the data for XGBoost by flattening the images and encoding labels.
 
     Parameters:
-    input_shape (tuple): Shape of the input data (default: (128, 128, 3)).
-    num_classes (int): Number of output classes (default: 10).
-
-    Returns:
-    tf.keras.Model: Compiled CNN model.
-    """
-    model = Sequential([
-        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
-        MaxPooling2D((2, 2)),
-        Conv2D(64, (3, 3), activation='relu'),
-        MaxPooling2D((2, 2)),
-        Conv2D(128, (3, 3), activation='relu'),
-        MaxPooling2D((2, 2)),
-        Flatten(),
-        Dense(128, activation='relu'),
-        Dropout(0.5),
-        Dense(num_classes, activation='softmax')
-    ])
-
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
-
-
-def create_pretrained_model(input_shape=(128, 128, 3), num_classes=10):
-    """
-    Create and compile a model based on MobileNetV2 with transfer learning.
-
-    Parameters:
-    input_shape (tuple): Shape of the input data (default: (128, 128, 3)).
-    num_classes (int): Number of output classes (default: 10).
-
-    Returns:
-    tf.keras.Model: Compiled pre-trained model.
-    """
-    # Load pre-trained MobileNetV2 model without the top layers
-    base_model = MobileNetV2(input_shape=input_shape, include_top=False, weights='imagenet')
-
-    # Freeze the base model layers to avoid retraining them
-    base_model.trainable = False
-
-    # Add custom top layers for genre classification
-    model = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(num_classes, activation='softmax')
-    ])
-
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
-
-
-def train_model(model, train_data, val_data, epochs=10):
-    """
-    Train the CNN model with the given data.
-
-    Parameters:
-    model (tf.keras.Model): The CNN model to train.
     train_data: Training data generator.
     val_data: Validation data generator.
-    epochs (int): Number of training epochs (default: 10).
 
     Returns:
-    tf.keras.callbacks.History: Training history.
+    tuple: Training and validation data and labels.
     """
-    return model.fit(train_data, validation_data=val_data, epochs=epochs)
+    # Flatten the images and extract the labels
+    X_train = []
+    y_train = []
+    for batch_images, batch_labels in train_data:
+        X_train.append(batch_images)
+        y_train.append(batch_labels)
+        if len(X_train) * len(batch_images) >= train_data.samples:
+            break
+
+    X_train = np.concatenate(X_train, axis=0)
+    y_train = np.concatenate(y_train, axis=0)
+
+    X_val = []
+    y_val = []
+    for batch_images, batch_labels in val_data:
+        X_val.append(batch_images)
+        y_val.append(batch_labels)
+        if len(X_val) * len(batch_images) >= val_data.samples:
+            break
+
+    X_val = np.concatenate(X_val, axis=0)
+    y_val = np.concatenate(y_val, axis=0)
+
+    # Flatten the images
+    X_train_flattened = X_train.reshape(X_train.shape[0], -1)
+    X_val_flattened = X_val.reshape(X_val.shape[0], -1)
+
+    # Convert labels to integers
+    label_encoder = LabelEncoder()
+    y_train_int = label_encoder.fit_transform(np.argmax(y_train, axis=1))
+    y_val_int = label_encoder.transform(np.argmax(y_val, axis=1))
+
+    return X_train_flattened, y_train_int, X_val_flattened, y_val_int
 
 
-def save_model(model, model_path="saved_model"):
+def train_xgboost(X_train, y_train):
     """
-    Save the trained model to the specified path using SavedModel format.
+    Train an XGBoost classifier on the provided data.
 
     Parameters:
-    model (tf.keras.Model): Trained CNN model.
-    model_path (str): Path to save the model directory (default: "saved_model").
-    """
-    model.save(model_path)  # Saves model in SavedModel format (directory)
-
-
-def load_model(model_path="saved_model"):
-    """
-    Load the trained CNN model from the specified path.
-
-    Parameters:
-    model_path (str): Path to the saved model directory.
+    X_train (array): Training feature data.
+    y_train (array): Training labels.
 
     Returns:
-    tf.keras.Model: Loaded CNN model.
+    xgb.Booster: Trained XGBoost model.
     """
-    model_path = os.path.join(os.getcwd(), model_path)  # Ensure correct path handling
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    param = {'objective': 'multi:softmax', 'num_class': 10, 'max_depth': 6, 'eta': 0.3}
+    num_round = 10  # Number of boosting iterations
+    model = xgb.train(param, dtrain, num_round)
+    return model
 
-    if os.path.exists(model_path):
-        print(f"Loading model from {model_path}")
-        return tf.keras.models.load_model(model_path)
-    else:
-        raise FileNotFoundError(f"Model directory not found at {model_path}")
+
+def evaluate_model(model, X_val, y_val):
+    """
+    Evaluate the XGBoost model on validation data.
+
+    Parameters:
+    model (xgb.Booster): Trained XGBoost model.
+    X_val (array): Validation feature data.
+    y_val (array): Validation labels.
+
+    Returns:
+    float: Accuracy score.
+    """
+    dval = xgb.DMatrix(X_val)
+    y_pred = model.predict(dval)
+    return accuracy_score(y_val, y_pred)
+
+
+def save_model(model, model_path="xgboost_model.json"):
+    """
+    Save the trained XGBoost model to the specified path.
+
+    Parameters:
+    model (xgb.Booster): Trained XGBoost model.
+    model_path (str): Path to save the model file (default: "xgboost_model.json").
+    """
+    model.save_model(model_path)
+
+
+def load_model(model_path="xgboost_model.json"):
+    """
+    Load the trained XGBoost model from the specified path.
+
+    Parameters:
+    model_path (str): Path to the saved model file.
+
+    Returns:
+    xgb.Booster: Loaded XGBoost model.
+    """
+    model = xgb.Booster()
+    model.load_model(model_path)
+    return model
 
 
 def predict_genre(model, spectrogram_path):
@@ -149,7 +152,7 @@ def predict_genre(model, spectrogram_path):
     Predicts the genre of a given spectrogram image.
 
     Parameters:
-    model (tf.keras.Model): Trained CNN model.
+    model (xgb.Booster): Trained XGBoost model.
     spectrogram_path (str): Path to the spectrogram image.
 
     Returns:
@@ -159,6 +162,9 @@ def predict_genre(model, spectrogram_path):
     img_array = img_to_array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
-    predictions = model.predict(img_array)
+    # Flatten the image
+    img_flattened = img_array.reshape(1, -1)
+    dtest = xgb.DMatrix(img_flattened)
+    prediction = model.predict(dtest)
     genres = ['Blues', 'Classical', 'Country', 'Disco', 'Hiphop', 'Jazz', 'Metal', 'Pop', 'Reggae', 'Rock']
-    return genres[np.argmax(predictions)]
+    return genres[int(prediction[0])]
