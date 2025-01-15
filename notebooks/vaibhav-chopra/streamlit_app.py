@@ -17,16 +17,23 @@ def run_streamlit_app(model):
 
     if audio_file is not None:
         try:
+            st.write("Audio file uploaded successfully!")  # Debug message
+
             with st.spinner("Processing the audio file..."):
                 audio_path = f"uploaded_{audio_file.name}"
                 with open(audio_path, "wb") as f:
                     f.write(audio_file.read())
+            
+            st.write(f"Audio saved to {audio_path}")  # Debug message
 
-                # Preprocess the audio file to generate spectrogram
-                spectrogram_path = preprocess_audio(audio_path)
+            # Preprocess the audio file to generate spectrogram
+            spectrogram_path = preprocess_audio(audio_path)
+            st.write(f"Spectrogram generated at {spectrogram_path}")  # Debug message
 
-            # Display the generated spectrogram
-            st.image(spectrogram_path, caption="Generated Spectrogram", use_column_width=True)
+            if os.path.exists(spectrogram_path):
+                st.image(spectrogram_path, caption="Generated Spectrogram", use_column_width=True)
+            else:
+                st.error("Spectrogram generation failed. Please check your preprocessing step.")  # Error message
 
             with st.spinner("Predicting genre..."):
                 genre = predict_genre(model, spectrogram_path)
@@ -35,6 +42,7 @@ def run_streamlit_app(model):
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
+            st.write(f"Exception details: {e}")  # Debug message
 
         finally:
             # Clean up the temporary files
