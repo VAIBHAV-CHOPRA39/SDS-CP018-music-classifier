@@ -1,20 +1,3 @@
-"""
-model.py
-
-This module defines the CNN model architecture for classifying music genres based on spectrogram images.
-It also includes utility functions for dataset preparation, model training, saving, loading, and prediction.
-
-Project Agenda:
-- To build a music genre classification model using the GTZAN dataset.
-- The dataset consists of 10 genres: Blues, Classical, Country, Disco, Hiphop, Jazz, Metal, Pop, Reggae, Rock.
-- Audio files are represented as Mel Spectrograms to facilitate classification through Convolutional Neural Networks (CNNs).
-
-Dataset Description:
-- **Audio Files:** 10 genres with 100 audio files each, each 30 seconds long.
-- **Spectrograms:** Mel Spectrogram visualizations for each audio file.
-- **Features CSV:** Precomputed features (mean, variance) for 30-second and 3-second clips.
-"""
-
 import os
 import numpy as np
 import tensorflow as tf
@@ -22,7 +5,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
-
+from tensorflow.keras.applications import MobileNetV2
 
 def load_dataset(dataset_dir="kaggle_dataset/genres_original", target_size=(128, 128), batch_size=32):
     """
@@ -85,6 +68,36 @@ def create_model(input_shape=(128, 128, 3), num_classes=10):
     return model
 
 
+def create_pretrained_model(input_shape=(128, 128, 3), num_classes=10):
+    """
+    Create and compile a model based on MobileNetV2 with transfer learning.
+
+    Parameters:
+    input_shape (tuple): Shape of the input data (default: (128, 128, 3)).
+    num_classes (int): Number of output classes (default: 10).
+
+    Returns:
+    tf.keras.Model: Compiled pre-trained model.
+    """
+    # Load pre-trained MobileNetV2 model without the top layers
+    base_model = MobileNetV2(input_shape=input_shape, include_top=False, weights='imagenet')
+
+    # Freeze the base model layers to avoid retraining them
+    base_model.trainable = False
+
+    # Add custom top layers for genre classification
+    model = tf.keras.Sequential([
+        base_model,
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes, activation='softmax')
+    ])
+
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+
 def train_model(model, train_data, val_data, epochs=10):
     """
     Train the CNN model with the given data.
@@ -101,28 +114,34 @@ def train_model(model, train_data, val_data, epochs=10):
     return model.fit(train_data, validation_data=val_data, epochs=epochs)
 
 
-def save_model(model, model_path="model.h5"):
+def save_model(model, model_path="saved_model"):
     """
-    Save the trained model to the specified path.
+    Save the trained model to the specified path using SavedModel format.
 
     Parameters:
     model (tf.keras.Model): Trained CNN model.
-    model_path (str): Path to save the model file.
+    model_path (str): Path to save the model directory (default: "saved_model").
     """
-    model.save(model_path)
+    model.save(model_path)  # Saves model in SavedModel format (directory)
 
 
-def load_model(model_path="model.h5"):
+def load_model(model_path="saved_model"):
     """
-    Load the trained CNN model.
+    Load the trained CNN model from the specified path.
 
     Parameters:
-    model_path (str): Path to the saved model file.
+    model_path (str): Path to the saved model directory.
 
     Returns:
     tf.keras.Model: Loaded CNN model.
     """
-    return tf.keras.models.load_model(model_path)
+    model_path = os.path.join(os.getcwd(), model_path)  # Ensure correct path handling
+
+    if os.path.exists(model_path):
+        print(f"Loading model from {model_path}")
+        return tf.keras.models.load_model(model_path)
+    else:
+        raise FileNotFoundError(f"Model directory not found at {model_path}")
 
 
 def predict_genre(model, spectrogram_path):
